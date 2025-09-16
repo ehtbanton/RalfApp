@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(md backend)",
+      "Bash(md frontend)",
+      "Bash(chmod:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
