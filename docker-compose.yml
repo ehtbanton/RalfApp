@@ -1,40 +1,13 @@
 version: '3.8'
 
 services:
-  traefik:
-    image: traefik:v3.0
-    container_name: traefik
-    ports:
-      - "80:80"
-      - "443:443"
-      - "8080:8080"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
-      - ./traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
-      - letsencrypt:/letsencrypt
-    environment:
-      - ACME_EMAIL=${ACME_EMAIL}
-      - DOMAIN=${DOMAIN}
-    networks:
-      - web
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.traefik.rule=Host(`traefik.${DOMAIN}`)"
-      - "traefik.http.routers.traefik.entrypoints=websecure"
-      - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.traefik.service=api@internal"
-      - "traefik.http.routers.traefik.middlewares=traefik-auth"
-      - "traefik.http.middlewares.traefik-auth.basicauth.users=admin:$$2y$$10$$zKCNQZS9r9dMY1J3jVpJKO8f1YJH7c4I8JFpxK2H5gY7L6dJbZzQ2"
-    restart: unless-stopped
-
   postgres:
     image: postgres:15
     container_name: postgres
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-ralfapp}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/db/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -42,19 +15,17 @@ services:
       - "5432:5432"
     networks:
       - backend
-    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     container_name: redis
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
     ports:
       - "6379:6379"
     networks:
       - backend
-    restart: unless-stopped
 
   backend:
     build:
@@ -62,10 +33,9 @@ services:
       dockerfile: Dockerfile
     container_name: backend
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-ralfapp}
       REDIS_URL: redis://redis:6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-key}
       JWT_ALGORITHM: HS256
       JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 30
       VIDEO_STORAGE_PATH: /app/storage
@@ -78,16 +48,7 @@ services:
       - postgres
       - redis
     networks:
-      - web
       - backend
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.backend.rule=Host(`api.${DOMAIN}`)"
-      - "traefik.http.routers.backend.entrypoints=websecure"
-      - "traefik.http.routers.backend.tls.certresolver=letsencrypt"
-      - "traefik.http.services.backend.loadbalancer.server.port=8000"
-      - "traefik.http.routers.backend.middlewares=cors-headers,secure-headers"
-    restart: unless-stopped
 
   worker:
     build:
@@ -95,9 +56,8 @@ services:
       dockerfile: Dockerfile.worker
     container_name: worker
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-ralfapp}
       REDIS_URL: redis://redis:6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
       VIDEO_STORAGE_PATH: /app/storage
     volumes:
       - video_storage:/app/storage
@@ -107,7 +67,6 @@ services:
       - redis
     networks:
       - backend
-    restart: unless-stopped
 
   frontend:
     build:
@@ -117,24 +76,13 @@ services:
     ports:
       - "3000:3000"
     networks:
-      - web
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.frontend.rule=Host(`${DOMAIN}`)"
-      - "traefik.http.routers.frontend.entrypoints=websecure"
-      - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
-      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
-      - "traefik.http.routers.frontend.middlewares=default-headers"
-    restart: unless-stopped
+      - backend
 
 volumes:
   postgres_data:
   redis_data:
   video_storage:
-  letsencrypt:
 
 networks:
-  web:
-    external: true
   backend:
     driver: bridge
